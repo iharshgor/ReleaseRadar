@@ -17,7 +17,9 @@ STATE_PATH = Path(__file__).parent / "data" / "seen_items.json"
 MAX_SEEN = 500
 EMBED_COLOR = 0x2ECC71
 HTTP_TIMEOUT = 15
-SYNOPSIS_LIMIT = 1000
+SYNOPSIS_LIMIT = 300
+MAX_EMBEDS = 10
+MAX_EMBED_CHARS = 5500
 
 log = logging.getLogger("releaseradar")
 
@@ -71,32 +73,75 @@ def parse_description(html):
     return result
 
 
-def build_embed(entry, meta):
-    """Build a Discord embed dict. Missing metadata is omitted gracefully."""
+def movie_key(entry):
+    """Group qualities of the same movie: the link without its #fragment."""
+    link = entry.get("link") or ""
+    return link.split("#")[0] or entry.get("title", "")
+
+
+def split_title(title):
+    """Split 'Name (2026) [1080p] [WEBRip]' into ('Name (2026)', '1080p WEBRip')."""
+    name = re.split(r"\s*\[", title, maxsplit=1)[0].strip() or title
+    tags = [t for t in re.findall(r"\[([^\]]+)\]", title) if "YTS" not in t.upper()]
+    return name, " ".join(tags)
+
+
+def build_movie_embed(items):
+    """One embed per movie. items is a list of (entry, meta) for its releases."""
+    entry, meta = items[0]
+    name, _ = split_title(entry.get("title", "Untitled release"))
+    lines = []
+    for e, m in items:
+        _, label = split_title(e.get("title", ""))
+        label = label or "Release"
+        text = f"[{label}]({e['link']})" if e.get("link") else label
+        if m["size"]:
+            text += f" ({m['size']})"
+        lines.append(text)
+
     fields = []
     if meta["imdb"]:
         fields.append({"name": "⭐ IMDb", "value": meta["imdb"], "inline": True})
-    if meta["size"]:
-        fields.append({"name": "💾 Size", "value": meta["size"], "inline": True})
     if meta["runtime"]:
         fields.append({"name": "⏱️ Runtime", "value": meta["runtime"], "inline": True})
     if meta["genre"]:
         fields.append({"name": "🎭 Genre", "value": meta["genre"], "inline": False})
+    fields.append({"name": "📥 Releases", "value": "\n".join(lines)[:1024], "inline": False})
 
-    embed = {
-        "title": entry.get("title", "Untitled release")[:256],
-        "color": EMBED_COLOR,
-        "fields": fields,
-    }
+    embed = {"title": name[:256], "color": EMBED_COLOR, "fields": fields}
     if entry.get("link"):
-        embed["url"] = entry["link"]
+        embed["url"] = entry["link"].split("#")[0]
     if meta["synopsis"]:
         embed["description"] = meta["synopsis"][:SYNOPSIS_LIMIT]
     if meta["poster"]:
         embed["thumbnail"] = {"url": meta["poster"]}
-    if entry.get("published"):
-        embed["footer"] = {"text": f"Published: {entry['published']}"}
+    newest = items[-1][0]
+    if newest.get("published"):
+        embed["footer"] = {"text": f"Published: {newest['published']}"}
     return embed
+
+
+def embed_size(embed):
+    size = len(embed.get("title", "")) + len(embed.get("description", ""))
+    size += len(embed.get("footer", {}).get("text", ""))
+    for f in embed.get("fields", []):
+        size += len(f["name"]) + len(f["value"])
+    return size
+
+
+def batch_embeds(groups):
+    """Pack (embed, entries) pairs into messages within Discord's embed limits."""
+    batches, current, total = [], [], 0
+    for embed, entries in groups:
+        size = embed_size(embed)
+        if current and (len(current) >= MAX_EMBEDS or total + size > MAX_EMBED_CHARS):
+            batches.append(current)
+            current, total = [], 0
+        current.append((embed, entries))
+        total += size
+    if current:
+        batches.append(current)
+    return batches
 
 
 def load_seen(path=STATE_PATH):
@@ -116,17 +161,17 @@ def save_seen(seen, path=STATE_PATH):
     Path(path).write_text(json.dumps(trimmed, indent=2) + "\n", encoding="utf-8")
 
 
-def send_to_discord(webhook_url, embed):
-    """POST one embed. Returns True on 200/204. Never logs the webhook URL."""
+def send_to_discord(webhook_url, embeds, mention=True):
+    """POST one message with embeds. Returns True on 200/204. Never logs the webhook URL."""
+    payload = {"embeds": embeds}
+    if mention:
+        payload["content"] = "@everyone"
+        payload["allowed_mentions"] = {"parse": ["everyone"]}
     for attempt in range(2):
         try:
             resp = requests.post(
                 webhook_url,
-                json={
-                    "content": "@everyone",
-                    "allowed_mentions": {"parse": ["everyone"]},
-                    "embeds": [embed],
-                },
+                json=payload,
                 timeout=HTTP_TIMEOUT,
             )
         except requests.RequestException as exc:
@@ -169,23 +214,34 @@ def main():
     new_entries.reverse()  # feeds are newest first; send oldest first
     log.info("%d entries in feed, %d new.", len(feed.entries), len(new_entries))
 
-    sent = 0
-    for entry in new_entries:
+    grouped = {}
+    for entry in new_entries:  # dicts keep insertion order, so oldest movie first
         meta = parse_description(entry.get("summary") or entry.get("description"))
-        embed = build_embed(entry, meta)
-        if dry_run:
+        grouped.setdefault(movie_key(entry), []).append((entry, meta))
+    groups = [
+        (build_movie_embed(items), [entry_key(e) for e, _ in items])
+        for items in grouped.values()
+    ]
+
+    if dry_run:
+        for embed, _ in groups:
             log.info("[dry-run] %s", json.dumps(embed, ensure_ascii=False))
-            continue
-        if send_to_discord(webhook_url, embed):
-            seen.append(entry_key(entry))
-            sent += 1
+        return 0
+
+    sent = 0
+    for i, batch in enumerate(batch_embeds(groups)):
+        embeds = [embed for embed, _ in batch]
+        if send_to_discord(webhook_url, embeds, mention=(i == 0)):
+            for _, keys in batch:
+                seen.extend(keys)
+                sent += len(keys)
             time.sleep(0.5)  # stay clear of webhook rate limits
         else:
-            log.warning("Skipping state update for failed item; will retry next run.")
+            log.warning("Message failed; its items will be retried next run.")
 
     if sent:
         save_seen(seen)
-    log.info("Sent %d notification(s).", sent)
+    log.info("Marked %d release(s) as sent.", sent)
     return 0
 
 

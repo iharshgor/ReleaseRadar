@@ -30,12 +30,38 @@ class ParserTests(unittest.TestCase):
         m = notifier.parse_description("Just some text")
         self.assertIsNone(m["poster"])
         self.assertIsNone(m["imdb"])
-        embed = notifier.build_embed({"title": "T", "link": "http://l"}, m)
+        embed = notifier.build_movie_embed([({"title": "T", "link": "http://l"}, m)])
         self.assertNotIn("thumbnail", embed)
-        self.assertEqual(embed["fields"], [])
+        self.assertEqual([f["name"] for f in embed["fields"]], ["📥 Releases"])
 
     def test_empty(self):
         self.assertIsNone(notifier.parse_description(None)["poster"])
+
+
+class GroupingTests(unittest.TestCase):
+    def _item(self, quality, size):
+        entry = {
+            "title": f"Film (2026) [{quality}] [WEBRip] [YTS.GG-YTS.BZ]",
+            "link": f"https://yts.gg/movies/film-2026#{quality}",
+            "published": "Tue, 06 Oct 2026",
+        }
+        return entry, notifier.parse_description(SAMPLE.replace("2.43 GB", size))
+
+    def test_qualities_merge_into_one_embed(self):
+        embed = notifier.build_movie_embed(
+            [self._item("720p", "1 GB"), self._item("1080p", "2 GB")]
+        )
+        self.assertEqual(embed["title"], "Film (2026)")
+        self.assertEqual(embed["url"], "https://yts.gg/movies/film-2026")
+        releases = embed["fields"][-1]["value"]
+        self.assertIn("[720p WEBRip](https://yts.gg/movies/film-2026#720p) (1 GB)", releases)
+        self.assertIn("1080p WEBRip", releases)
+        self.assertNotIn("YTS", releases)
+
+    def test_batches_cap_at_ten_embeds(self):
+        groups = [({"title": "t", "fields": []}, [str(i)]) for i in range(25)]
+        sizes = [len(b) for b in notifier.batch_embeds(groups)]
+        self.assertEqual(sizes, [10, 10, 5])
 
 
 class StateTests(unittest.TestCase):
@@ -63,11 +89,17 @@ class DiscordTests(unittest.TestCase):
     def test_payload_pings_everyone(self):
         resp = mock.Mock(status_code=204)
         with mock.patch.object(notifier.requests, "post", return_value=resp) as post:
-            notifier.send_to_discord("https://secret", {"title": "T"})
+            notifier.send_to_discord("https://secret", [{"title": "T"}])
         payload = post.call_args.kwargs["json"]
         self.assertEqual(payload["content"], "@everyone")
         self.assertEqual(payload["allowed_mentions"], {"parse": ["everyone"]})
         self.assertEqual(payload["embeds"], [{"title": "T"}])
+
+    def test_no_mention_on_followup_message(self):
+        resp = mock.Mock(status_code=204)
+        with mock.patch.object(notifier.requests, "post", return_value=resp) as post:
+            notifier.send_to_discord("https://secret", [{}], mention=False)
+        self.assertNotIn("content", post.call_args.kwargs["json"])
 
     def test_exception_does_not_leak_url(self):
         err = notifier.requests.ConnectionError("https://secret-webhook")
