@@ -1,4 +1,4 @@
-name: Daily Feed Check
+name: Feed Check
 
 on:
   schedule:

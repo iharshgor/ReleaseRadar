@@ -1,6 +1,6 @@
 # ReleaseRadar
 
-[![Daily Feed Check](https://github.com/iharshgor/ReleaseRadar/actions/workflows/daily_feed_check.yml/badge.svg)](https://github.com/iharshgor/ReleaseRadar/actions/workflows/daily_feed_check.yml)
+[![Feed Check](https://github.com/iharshgor/ReleaseRadar/actions/workflows/feed_check.yml/badge.svg)](https://github.com/iharshgor/ReleaseRadar/actions/workflows/feed_check.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 
