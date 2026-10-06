@@ -88,13 +88,17 @@ def build_movie_embed(items):
     """One embed per movie. items is a list of (entry, meta) for its releases."""
     entry, meta = items[0]
     name, _ = split_title(entry.get("title", "Untitled release"))
+    # Quality variants usually share one page link; only link lines that differ.
+    distinct_links = len({e.get("link") for e, _ in items}) > 1
     lines = []
     for e, m in items:
         _, label = split_title(e.get("title", ""))
-        label = label or "Release"
-        text = f"[{label}]({e['link']})" if e.get("link") else label
+        parts = label.split(" ", 1) if label else ["Release"]
+        text = f"**{parts[0]}**" + (f" {parts[1]}" if len(parts) > 1 else "")
+        if distinct_links and e.get("link"):
+            text = f"[{text}]({e['link']})"
         if m["size"]:
-            text += f" ({m['size']})"
+            text += f" · {m['size']}"
         lines.append(text)
 
     fields = []
@@ -104,7 +108,7 @@ def build_movie_embed(items):
         fields.append({"name": "⏱️ Runtime", "value": meta["runtime"], "inline": True})
     if meta["genre"]:
         fields.append({"name": "🎭 Genre", "value": meta["genre"], "inline": False})
-    fields.append({"name": "📥 Releases", "value": "\n".join(lines)[:1024], "inline": False})
+    fields.append({"name": "📥 Available Resolutions", "value": "\n".join(lines)[:1024], "inline": False})
 
     embed = {"title": name[:256], "color": EMBED_COLOR, "fields": fields}
     if entry.get("link"):

@@ -32,7 +32,7 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(m["imdb"])
         embed = notifier.build_movie_embed([({"title": "T", "link": "http://l"}, m)])
         self.assertNotIn("thumbnail", embed)
-        self.assertEqual([f["name"] for f in embed["fields"]], ["📥 Releases"])
+        self.assertEqual([f["name"] for f in embed["fields"]], ["📥 Available Resolutions"])
 
     def test_empty(self):
         self.assertIsNone(notifier.parse_description(None)["poster"])
@@ -42,7 +42,7 @@ class GroupingTests(unittest.TestCase):
     def _item(self, quality, size):
         entry = {
             "title": f"Film (2026) [{quality}] [WEBRip] [YTS.GG-YTS.BZ]",
-            "link": f"https://yts.gg/movies/film-2026#{quality}",
+            "link": "https://yts.gg/movies/film-2026",
             "published": "Tue, 06 Oct 2026",
         }
         return entry, notifier.parse_description(SAMPLE.replace("2.43 GB", size))
@@ -54,8 +54,10 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(embed["title"], "Film (2026)")
         self.assertEqual(embed["url"], "https://yts.gg/movies/film-2026")
         releases = embed["fields"][-1]["value"]
-        self.assertIn("[720p WEBRip](https://yts.gg/movies/film-2026#720p) (1 GB)", releases)
-        self.assertIn("1080p WEBRip", releases)
+        self.assertEqual(embed["fields"][-1]["name"], "📥 Available Resolutions")
+        self.assertEqual(
+            releases.splitlines(), ["**720p** WEBRip · 1 GB", "**1080p** WEBRip · 2 GB"]
+        )
         self.assertNotIn("YTS", releases)
 
 
