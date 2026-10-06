@@ -60,6 +60,15 @@ class DiscordTests(unittest.TestCase):
         with mock.patch.object(notifier.requests, "post", return_value=resp):
             self.assertTrue(notifier.send_to_discord("https://secret", {}))
 
+    def test_payload_pings_everyone(self):
+        resp = mock.Mock(status_code=204)
+        with mock.patch.object(notifier.requests, "post", return_value=resp) as post:
+            notifier.send_to_discord("https://secret", {"title": "T"})
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["content"], "@everyone")
+        self.assertEqual(payload["allowed_mentions"], {"parse": ["everyone"]})
+        self.assertEqual(payload["embeds"], [{"title": "T"}])
+
     def test_exception_does_not_leak_url(self):
         err = notifier.requests.ConnectionError("https://secret-webhook")
         with mock.patch.object(notifier.requests, "post", side_effect=err):

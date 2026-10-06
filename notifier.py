@@ -121,7 +121,13 @@ def send_to_discord(webhook_url, embed):
     for attempt in range(2):
         try:
             resp = requests.post(
-                webhook_url, json={"embeds": [embed]}, timeout=HTTP_TIMEOUT
+                webhook_url,
+                json={
+                    "content": "@everyone",
+                    "allowed_mentions": {"parse": ["everyone"]},
+                    "embeds": [embed],
+                },
+                timeout=HTTP_TIMEOUT,
             )
         except requests.RequestException as exc:
             # Exception text can contain the URL, so log only the class name.
