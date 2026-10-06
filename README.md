@@ -9,7 +9,7 @@ A serverless RSS monitor that posts new movie releases to Discord. It runs on Gi
 ## Architecture
 
 ```
-GitHub Actions (daily 00:00 UTC or manual)
+GitHub Actions (every 12 hours (00:00 and 12:00 UTC) or manual)
   1. Fetch feed (feedparser)
   2. Parse HTML description (BeautifulSoup + regex)
   3. Compare IDs with data/seen_items.json
