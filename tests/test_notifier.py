@@ -58,11 +58,6 @@ class GroupingTests(unittest.TestCase):
         self.assertIn("1080p WEBRip", releases)
         self.assertNotIn("YTS", releases)
 
-    def test_batches_cap_at_ten_embeds(self):
-        groups = [({"title": "t", "fields": []}, [str(i)]) for i in range(25)]
-        sizes = [len(b) for b in notifier.batch_embeds(groups)]
-        self.assertEqual(sizes, [10, 10, 5])
-
 
 class StateTests(unittest.TestCase):
     def test_sliding_window(self):

@@ -17,9 +17,7 @@ STATE_PATH = Path(__file__).parent / "data" / "seen_items.json"
 MAX_SEEN = 500
 EMBED_COLOR = 0x2ECC71
 HTTP_TIMEOUT = 15
-SYNOPSIS_LIMIT = 300
-MAX_EMBEDS = 10
-MAX_EMBED_CHARS = 5500
+SYNOPSIS_LIMIT = 1000
 
 log = logging.getLogger("releaseradar")
 
@@ -121,29 +119,6 @@ def build_movie_embed(items):
     return embed
 
 
-def embed_size(embed):
-    size = len(embed.get("title", "")) + len(embed.get("description", ""))
-    size += len(embed.get("footer", {}).get("text", ""))
-    for f in embed.get("fields", []):
-        size += len(f["name"]) + len(f["value"])
-    return size
-
-
-def batch_embeds(groups):
-    """Pack (embed, entries) pairs into messages within Discord's embed limits."""
-    batches, current, total = [], [], 0
-    for embed, entries in groups:
-        size = embed_size(embed)
-        if current and (len(current) >= MAX_EMBEDS or total + size > MAX_EMBED_CHARS):
-            batches.append(current)
-            current, total = [], 0
-        current.append((embed, entries))
-        total += size
-    if current:
-        batches.append(current)
-    return batches
-
-
 def load_seen(path=STATE_PATH):
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -229,12 +204,13 @@ def main():
         return 0
 
     sent = 0
-    for i, batch in enumerate(batch_embeds(groups)):
-        embeds = [embed for embed, _ in batch]
-        if send_to_discord(webhook_url, embeds, mention=(i == 0)):
-            for _, keys in batch:
-                seen.extend(keys)
-                sent += len(keys)
+    pinged = False
+    for embed, keys in groups:
+        # Only the first delivered message of a run pings @everyone.
+        if send_to_discord(webhook_url, [embed], mention=not pinged):
+            pinged = True
+            seen.extend(keys)
+            sent += len(keys)
             time.sleep(0.5)  # stay clear of webhook rate limits
         else:
             log.warning("Message failed; its items will be retried next run.")
