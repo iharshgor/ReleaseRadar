@@ -79,9 +79,34 @@ def movie_key(entry):
 
 def split_title(title):
     """Split 'Name (2026) [1080p] [WEBRip]' into ('Name (2026)', '1080p WEBRip')."""
-    name = re.split(r"\s*\[", title, maxsplit=1)[0].strip() or title
+    name = title.split("[", 1)[0].strip() or title
     tags = [t for t in re.findall(r"\[([^\]]+)\]", title) if "YTS" not in t.upper()]
     return name, " ".join(tags)
+
+
+def build_release_line(entry, meta, link_it):
+    """One line of the resolutions list: quality label, optional link and size."""
+    _, label = split_title(entry.get("title", ""))
+    parts = label.split(" ", 1) if label else ["Release"]
+    text = f"**{parts[0]}**" + (f" {parts[1]}" if len(parts) > 1 else "")
+    if link_it and entry.get("link"):
+        text = f"[{text}]({entry['link']})"
+    if meta["size"]:
+        text += f" · {meta['size']}"
+    return text
+
+
+def build_fields(meta, lines):
+    fields = []
+    for key, name, inline in (
+        ("imdb", "⭐ IMDb", True),
+        ("runtime", "⏱️ Runtime", True),
+        ("genre", "🎭 Genre", False),
+    ):
+        if meta[key]:
+            fields.append({"name": name, "value": meta[key], "inline": inline})
+    fields.append({"name": "📥 Available Resolutions", "value": "\n".join(lines)[:1024], "inline": False})
+    return fields
 
 
 def build_movie_embed(items):
@@ -90,25 +115,8 @@ def build_movie_embed(items):
     name, _ = split_title(entry.get("title", "Untitled release"))
     # Quality variants usually share one page link; only link lines that differ.
     distinct_links = len({e.get("link") for e, _ in items}) > 1
-    lines = []
-    for e, m in items:
-        _, label = split_title(e.get("title", ""))
-        parts = label.split(" ", 1) if label else ["Release"]
-        text = f"**{parts[0]}**" + (f" {parts[1]}" if len(parts) > 1 else "")
-        if distinct_links and e.get("link"):
-            text = f"[{text}]({e['link']})"
-        if m["size"]:
-            text += f" · {m['size']}"
-        lines.append(text)
-
-    fields = []
-    if meta["imdb"]:
-        fields.append({"name": "⭐ IMDb", "value": meta["imdb"], "inline": True})
-    if meta["runtime"]:
-        fields.append({"name": "⏱️ Runtime", "value": meta["runtime"], "inline": True})
-    if meta["genre"]:
-        fields.append({"name": "🎭 Genre", "value": meta["genre"], "inline": False})
-    fields.append({"name": "📥 Available Resolutions", "value": "\n".join(lines)[:1024], "inline": False})
+    lines = [build_release_line(e, m, distinct_links) for e, m in items]
+    fields = build_fields(meta, lines)
 
     embed = {"title": name[:256], "color": EMBED_COLOR, "fields": fields}
     if entry.get("link"):
