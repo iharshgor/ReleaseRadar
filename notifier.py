@@ -124,7 +124,7 @@ def build_movie_embed(items):
     if meta["synopsis"]:
         embed["description"] = meta["synopsis"][:SYNOPSIS_LIMIT]
     if meta["poster"]:
-        embed["thumbnail"] = {"url": meta["poster"]}
+        embed["image"] = {"url": meta["poster"]}
     newest = items[-1][0]
     if newest.get("published"):
         embed["footer"] = {"text": f"Published: {newest['published']}"}
