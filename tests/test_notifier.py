@@ -31,7 +31,7 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(m["poster"])
         self.assertIsNone(m["imdb"])
         embed = notifier.build_movie_embed([({"title": "T", "link": "http://l"}, m)])
-        self.assertNotIn("thumbnail", embed)
+        self.assertNotIn("image", embed)
         self.assertEqual([f["name"] for f in embed["fields"]], ["📥 Available Resolutions"])
 
     def test_empty(self):
