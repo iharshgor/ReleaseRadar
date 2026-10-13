@@ -179,6 +179,33 @@ def send_to_discord(webhook_url, embeds, mention=True):
     return False
 
 
+def fetch_feed(attempts=3):
+    """Download and parse the feed; return None (after logging why) on failure."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; ReleaseRadar/1.0)",
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.5",
+    }
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(FEED_URL, headers=headers, timeout=HTTP_TIMEOUT)
+        except requests.RequestException as exc:
+            log.warning("Feed request failed (attempt %d/%d): %s", attempt, attempts, exc)
+        else:
+            feed = feedparser.parse(resp.content)
+            if resp.ok and feed.entries:
+                return feed
+            log.warning(
+                "Feed unusable (attempt %d/%d): HTTP %s, content-type %s, parse error %s, body starts: %r",
+                attempt, attempts, resp.status_code, resp.headers.get("content-type"),
+                type(feed.get("bozo_exception")).__name__ if feed.bozo else None,
+                resp.text[:200],
+            )
+        if attempt < attempts:
+            time.sleep(5 * attempt)
+    log.error("Could not fetch or parse feed from %s.", FEED_URL)
+    return None
+
+
 def entry_key(entry):
     return entry.get("id") or entry.get("link")
 
@@ -190,9 +217,8 @@ def main():
     if dry_run:
         log.info("DISCORD_WEBHOOK_URL not set; running in dry-run mode.")
 
-    feed = feedparser.parse(FEED_URL)
-    if feed.bozo and not feed.entries:
-        log.error("Could not fetch or parse feed (%s).", type(feed.bozo_exception).__name__)
+    feed = fetch_feed()
+    if feed is None:
         return 1
 
     seen = load_seen()
